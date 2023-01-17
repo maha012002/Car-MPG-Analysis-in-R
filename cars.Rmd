@@ -1,0 +1,419 @@
+---
+title: "Cars MPG Data Analysis"
+output: 
+---
+
+
+### Load libraries
+
+```{r}
+library(knitr)
+library(dplyr)
+library(corrplot)
+library(visreg)
+library(ggplot2)
+#library(scatterplot3d)
+library(randomForest)
+```
+## Data Description
+
+1. Title: Auto-Mpg Data
+
+2. Dataset : Cars Data set 
+
+5. Number of Instances: 398
+
+6. Number of Attributes: 9 including the class attribute
+
+7. Attribute Information:
+
+    1. mpg:           continuous
+    2. cylinders:     multi-valued discrete
+    3. displacement:  continuous
+    4. horsepower:    continuous
+    5. weight:        continuous
+    6. acceleration:  continuous
+    7. model year:    multi-valued discrete
+    8. origin:        multi-valued discrete
+    9. car name:      string (unique for each instance)
+
+8. Missing Attribute Values:  horsepower has 6 missing values
+
+## Including Code
+
+
+```{r}
+data <- read.csv("Cars-Data.csv",header = T)
+```
+
+### Descriptive Analysis
+
+```{r}
+str(data)
+
+#View(data)
+```
+
+```{r}
+glimpse(data) # makes possible to see every column in dataframe
+```
+
+```{r}
+head(data)
+```
+
+```{r}
+summary(data) # gets clear idea about each parameters
+```
+
+```{r}
+print("Unique model years")
+unique(data$model_year)
+
+print("Unique origin")
+unique(data$origin)
+
+print("Unique cylinders")
+unique(data$cylinders)
+```
+
+### Checking missing values
+```{r}
+anyNA(data)
+sum(is.na(data$horsepower))
+
+```
+
+## Data Cleaning
+
+* Cylinders column should be factors (multi-valued discrete) not integer
+```{r}
+data$cylinders = data$cylinders %>%
+                 factor(labels = sort(unique(data$cylinders))) # factor is discrete data one that is countable
+```
+
+
+* Horsepower has some missing values. We will impute those by mean.
+
+```{r}
+
+
+colSums(is.na(data))
+
+data$horsepower[is.na(data$horsepower)] = mean(data$horsepower,na.rm = T)
+```
+
+* Cylinders 3 & 5 has very low values. We can drop these cylinders
+
+```{r}
+
+
+data %>% group_by(cylinders) %>% count(cylinders)
+
+data <- data %>% filter(cylinders != 3 & cylinders != 5)
+
+
+```
+
+* Converting Model Year to factor since it has few levels
+```{r}
+
+data$model_year = data$model_year %>%
+                  factor(labels = sort(unique(data$model_year)))
+```
+
+
+* Converting Origin to factor since it has only 3 levels
+```{r}
+
+data$origin = data$origin %>%
+                  factor(labels = sort(unique(data$origin)))
+```
+
+## Visual Analysis
+
+
+* Acceleration data is normally distributed. Rest are right skewed.
+```{r}
+library(reshape2)
+
+ggplot(data,aes(mpg, fill=cylinders)) +
+  geom_histogram(color="black")
+
+ggplot(data, aes(x=acceleration)) + 
+ geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") # aplha controls tranparency - 0 to 1
+
+ggplot(data, aes(x=horsepower)) + 
+ geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") 
+
+ggplot(data, aes(x=displacement)) + 
+ geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") 
+
+ggplot(data, aes(x=weight)) + 
+ geom_histogram(aes(y=..density..), colour="black", fill="white")+
+ geom_density(alpha=.2, fill="#FF6666") 
+
+d <- melt(data[,-c(8:9)])
+
+ggplot(d,aes(value)) + 
+    facet_wrap(~variable,scales = "free_x",nrow = 3) + # facet_wrap - 1d sequence to 2d 
+    geom_histogram(colour="black", fill="red")
+
+
+```
+
+
+### Checking for outliers
+
+
+```{r}
+ggplot(data, aes(model_year,mpg,color=cylinders)) +
+  geom_boxplot()
+```
+
+
+```{r}
+ggplot(data, aes(origin,mpg)) +
+  geom_boxplot()
+```
+
+* Origin USA has heavy weighted cars (median ~ 3400)
+```{r}
+ggplot(data, aes(origin,weight)) +
+  geom_boxplot()
+```
+The cylinder 8 is used in heavy weighted cars
+```{r}
+ggplot(data, aes(cylinders,weight,fill=cylinders)) +
+  geom_boxplot()
+```
+
+
+```{r}
+ggplot(data, aes(x=factor(cylinders),y=mpg,color=factor(cylinders)))+
+  geom_boxplot(outlier.color = "red")
+
+d <- melt(data[,-c(8:9)])
+
+ggplot(d,aes('',value)) + 
+    facet_wrap(~variable,scales = "free_x") + 
+    geom_boxplot(outlier.colour="red", outlier.shape=16, outlier.size=2, notch=F)
+```
+
+### Scatterplot
+
+* Miles per gallon (mpg) decreasing with increase of the weight
+
+```{r}
+ggplot(data,aes(weight,mpg)) +
+  geom_point()+
+  geom_smooth(method=lm)  
+
+ggplot(data,aes(cylinders,mpg)) +
+  geom_point()+
+  geom_smooth(method=lm)  
+
+ggplot(data,aes(displacement,mpg)) +
+  geom_point()+
+  geom_smooth(method=lm)  
+
+ggplot(data,aes(weight, displacement)) +
+  geom_point(color="red") +
+  geom_smooth(method = lm)
+```
+
+* Weight, Horsepower and Displacement are highly correlated, so we can pick one attribute out of 3
+
+```{r}
+newdata <- cor(data[ ,c('mpg','weight', 'displacement', 'horsepower', 'acceleration')],use = 'complete')
+corrplot(newdata, method = "number")
+
+```
+
+* 6 and 8 cylinders cars are majorly built in origin 1(usa).
+
+```{r}
+ggplot(data, aes(cylinders,fill=origin)) +
+  geom_bar(position = "dodge")
+
+ggplot(data, aes(cylinders,fill=origin)) +
+  geom_bar(position = "stack")
+```
+
+* Significant drop in the car weights in origin (USA). The reason behind it is increase in production of 4 cylinders cars those weighs less.
+
+```{r}
+ggplot(data, aes(model_year, y = weight, color=origin)) +
+  geom_boxplot() +
+  facet_wrap(~ origin) +
+  xlab('Model Year') +
+  ylab('Weight') +
+  ggtitle('Car Weights Distributions Over Time by Region of Origin')
+```
+
+* We can see that over the year there was increase in the milege of the cars (Miles Per Gallon)
+
+```{r}
+ ggplot(data, aes(model_year,mpg,group=1))+geom_smooth()
+```
+
+* Significant drop in Car Engine's horsepower over the years
+```{r}
+ ggplot(data, aes(model_year,horsepower,group=1))+geom_smooth()
+```
+
+### Building Linear Model - Weight is more significant among other features and it was highly correlated to Target variable MPG
+
+* Spliting the dataset in Train and Test (80-20)
+```{r}
+set.seed(100)# 100 is the set of random number values(same result for randommization)
+
+#80%-20% split
+
+indexes <- sample(nrow(data), (0.80*nrow(data)), replace = FALSE)
+
+trainData <- data[indexes, ]
+testData <- data[-indexes, ]
+```
+
+* Creating the Linear Model with significant features
+Model - 1 LINEAR REGRESSION 
+
+```{r}
+model1 <- lm(mpg~weight+horsepower+cylinders+displacement+acceleration,data = data)
+
+```
+
+* Stats for the linear model
+```{r}
+summary(model1)
+```
+
+
+* Plots for the linear model
+plot 1 - Residual Vs Fitted - plot shows some of the outliers lying far away from the middle of the graph
+plot 2 - Normal Q-Q - for spotting the outliers
+plot3- To detect non-linearity
+plot 4 - helps to identify influential data points on the model
+
+```{r}
+plot(model1)
+```
+
+```{r}
+visreg(model1)
+```
+
+```{r}
+#RMSE VALUE
+library(forecast)
+predictions <- predict(model1, newdata = testData)
+acc1 <- accuracy(predictions,testData$mpg)
+acc1
+```
+```{r}
+actual_pred<-data.frame(cbind(actuals=testData$mpg,predict=predictions))
+head(actual_pred)
+```
+It shows 86 % accuracy of data 
+```{r}
+correlation_accuracy <- cor(actual_pred)
+correlation_accuracy
+```
+
+
+MODEL-2 RANDOM FOREST
+```{r}
+model2 <- randomForest(mpg ~ ., data = trainData, importance = TRUE, ntree = 15, mtry = 4, replace = T)
+model2
+```
+```{r}
+summary(model2)
+```
+
+RMSE VALUE FOR RANDOM FOREST
+```{r}
+predictions2 <- predict(model2, newdata = testData)
+acc2 <- accuracy(predictions2,testData$mpg)
+acc2
+```
+```{r}
+actual_pred1<-data.frame(cbind(actuals=testData$mpg,predict=predictions2))
+actual_pred1
+```
+It shows 93% accuracy of data 
+```{r}
+correlation_accuracy <- cor(actual_pred1)
+correlation_accuracy
+```
+```{r}
+plot(model2)# error vs number of trees plot
+```
+
+
+MODEL - 3 - DECISON TREE 
+```{r}
+library(rpart)
+model3 <- rpart(formula = mpg ~ ., data = testData)
+plot(model3,uniform = TRUE, main = "MPG Decision Tree Regression")
+
+```
+
+Accuracy matrix
+```{r}
+predictions3 <- predict(model3, data = testData)
+acc3 <- accuracy(predictions3,testData$mpg)
+acc3
+```
+```{r}
+actual_pred3<-data.frame(cbind(actuals=testData$mpg,predict=predictions3))
+head(actual_pred3)
+```
+It shows 97% accuracy of the data 
+```{r}
+correlation_accuracy <- cor(actual_pred3)
+correlation_accuracy
+```
+
+Linear Regression Working 87% efficiently 
+```{r}
+predictor1 <- predict(model1, newdata = testData)
+result.data <- data.frame(model.year = testData$model_year, 
+                          prediction = predictor1, 
+                          actual = testData$mpg)
+percent.diff <- abs(result.data$prediction - result.data$actual) / result.data$actual * 100
+result.data$percent.diff <- percent.diff
+remove(percent.diff)
+paste("Percent difference:", round(mean(result.data$percent.diff)))
+```
+
+RANDOM FOREST - Working 91% efficiently
+```{r}
+predictor2 <- predict(model2, newdata = testData)
+result.data <- data.frame(model.year = testData$model_year, 
+                          prediction = predictor2, 
+                          actual = testData$mpg)
+percent.diff <- abs(result.data$prediction - result.data$actual) / result.data$actual * 100
+result.data$percent.diff <- percent.diff
+remove(percent.diff)
+paste("Percent difference:", round(mean(result.data$percent.diff)))
+```
+
+DECISION TREE - Working 94% efficiently
+```{r}
+predictor3 <- predict(model3, newdata = testData)
+result.data <- data.frame(model.year = testData$model_year, 
+                          prediction = predictor3, 
+                          actual = testData$mpg)
+percent.diff <- abs(result.data$prediction - result.data$actual) / result.data$actual * 100
+result.data$percent.diff <- percent.diff
+remove(percent.diff)
+paste("Percent difference:", round(mean(result.data$percent.diff)))
+```
+
+Therefore , we can conclude that the model decision tree performed better than the other two models in predicting the Miles per Gallon dependent features variation with other independent features.
+```{r}
+```
